@@ -1,11 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation'; // <-- TAMBAHAN: Buat pindah halaman
 import { supabase } from '@/lib/supabase';
 import { 
   RefreshCw, Building2, Inbox, Hash, Calendar, Phone, 
   Briefcase, CheckCircle2, Clock, AlertCircle, Activity,
-  ChevronRight, ChevronLeft, Ticket as TicketIcon, Leaf
+  ChevronRight, ChevronLeft, Ticket as TicketIcon, Leaf,
+  LogOut, Loader2 // <-- TAMBAHAN: Ikon untuk Logout dan Loading
 } from 'lucide-react';
 
 // --- TIPE DATA ---
@@ -20,7 +22,14 @@ type Ticket = {
   created_at: string;
 };
 
-export default function Home() {
+export default function DashboardPage() { // <-- Ubah nama fungsi biar rapi jadi DashboardPage
+  const router = useRouter(); // <-- TAMBAHAN
+  
+  // --- STATE AUTH ---
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  // --- STATE DATA ---
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -36,6 +45,27 @@ export default function Home() {
     done: tickets.filter(t => t.status === 'SELESAI').length,
   };
 
+  // --- 1. FUNGSI CEK KEAMANAN & LOGIN ---
+  useEffect(() => {
+    const checkUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        router.push('/login'); // Tendang ke halaman login kalau belum masuk
+      } else {
+        setIsCheckingAuth(false); // Aman, tampilkan halaman
+      }
+    };
+    checkUser();
+  }, [router]);
+
+  // --- 2. FUNGSI LOGOUT ---
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    await supabase.auth.signOut();
+    router.push('/login');
+  };
+
+  // --- FUNGSI AMBIL DATA ---
   const fetchTickets = async () => {
     setLoading(true);
     setIsRefreshing(true);
@@ -50,10 +80,13 @@ export default function Home() {
   };
 
   useEffect(() => {
-    fetchTickets();
-    const interval = setInterval(fetchTickets, 30000); 
-    return () => clearInterval(interval);
-  }, []);
+    // Hanya jalankan fetch kalau sudah lolos cek login
+    if (!isCheckingAuth) {
+      fetchTickets();
+      const interval = setInterval(fetchTickets, 30000); 
+      return () => clearInterval(interval);
+    }
+  }, [isCheckingAuth]);
 
   const updateStatus = async (id: number, newStatus: string) => {
     setTickets(prev => prev.map(t => t.id === id ? { ...t, status: newStatus } : t));
@@ -97,14 +130,22 @@ export default function Home() {
     );
   };
 
+  // --- TAMPILAN LOADING SEBELUM MUNCUL DASHBOARD ---
+  if (isCheckingAuth) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center">
+        <Loader2 size={40} className="animate-spin text-[#006A4E] mb-4" />
+        <p className="text-sm font-bold text-slate-500 animate-pulse tracking-widest uppercase">Memverifikasi Akses...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#F1F5F9] font-sans text-slate-800">
       
-      {/* === HEADER PREMIUM (Nuansa Gradasi Hijau PTPN / PalmCo) === */}
-      {/* Perubahan di bagian className ini: Menggunakan gradasi hijau gelap elegan */}
+      {/* === HEADER PREMIUM === */}
       <div className="bg-gradient-to-br from-[#063B27] via-[#025035] to-[#006A4E] text-white shadow-2xl overflow-hidden relative border-b-4 border-[#009A66]/50">
         
-        {/* Dekorasi Latar Belakang */}
         <div className="absolute top-[-20%] right-[-5%] p-8 opacity-5 rotate-12 pointer-events-none">
             <Leaf size={240} strokeWidth={1} />
         </div>
@@ -127,14 +168,28 @@ export default function Home() {
             </div>
           </div>
 
-          <button 
-            onClick={() => { fetchTickets(); setCurrentPage(1); }}
-            disabled={isRefreshing || loading}
-            className="group flex items-center gap-3 bg-white/10 hover:bg-white/20 backdrop-blur-sm text-white px-6 py-3 rounded-xl transition-all shadow-lg shadow-black/10 active:scale-95 border border-white/20"
-          >
-            <RefreshCw size={18} className={`${isRefreshing ? 'animate-spin' : ''}`} />
-            <span className="text-sm font-bold tracking-wide">Update Dashboard</span>
-          </button>
+          {/* === TOMBOL HEADER (Update & Logout) === */}
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={() => { fetchTickets(); setCurrentPage(1); }}
+              disabled={isRefreshing || loading}
+              className="group flex items-center gap-3 bg-white/10 hover:bg-white/20 backdrop-blur-sm text-white px-5 py-3 rounded-xl transition-all shadow-lg shadow-black/10 active:scale-95 border border-white/20"
+            >
+              <RefreshCw size={18} className={`${isRefreshing ? 'animate-spin' : ''}`} />
+              <span className="text-sm font-bold tracking-wide hidden md:block">Update Data</span>
+            </button>
+
+            {/* TOMBOL LOGOUT BARU */}
+            <button 
+              onClick={handleLogout}
+              disabled={isLoggingOut}
+              className="group flex items-center gap-2 bg-rose-500/20 hover:bg-rose-500 backdrop-blur-sm text-rose-100 px-5 py-3 rounded-xl transition-all shadow-lg shadow-black/10 active:scale-95 border border-rose-500/50 hover:border-rose-500 disabled:opacity-50"
+            >
+              {isLoggingOut ? <Loader2 size={18} className="animate-spin" /> : <LogOut size={18} />}
+              <span className="text-sm font-bold tracking-wide">{isLoggingOut ? 'Keluar...' : 'Keluar'}</span>
+            </button>
+          </div>
+
         </div>
       </div>
 
@@ -164,89 +219,82 @@ export default function Home() {
         </div>
 
        {/* === MAIN TABLE CARD === */}
-<div className="bg-white rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-200 overflow-hidden flex flex-col">
-  <div className="overflow-x-auto">
-    <table className="w-full text-center">
-      <thead>
-        {/* Header tetap hijau gelap agar selaras dengan Kop atas */}
-        <tr className="bg-gradient-to-r from-[#063B27] to-[#006A4E] text-white">
-          <th className="px-6 py-5 text-[11px] font-bold uppercase tracking-[0.2em] border-r border-white/10">Tiket</th>
-          <th className="px-6 py-5 text-[11px] font-bold uppercase tracking-[0.2em] border-r border-white/10">Pelapor</th>
-          <th className="px-6 py-5 text-[11px] font-bold uppercase tracking-[0.2em] border-r border-white/10">Bidang</th>
-          <th className="px-6 py-5 text-[11px] font-bold uppercase tracking-[0.2em] border-r border-white/10">Detail Masalah</th>
-          <th className="px-6 py-5 text-[11px] font-bold uppercase tracking-[0.2em] border-r border-white/10">Status</th>
-          <th className="px-6 py-5 text-[11px] font-bold uppercase tracking-[0.2em]">Tindakan</th>
-        </tr>
-      </thead>
-      
-      <tbody className="divide-y divide-slate-100">
-        {currentTickets.map((t) => (
-          <tr key={t.id} className="group hover:bg-slate-50 transition-all">
-            
-            {/* ID & Waktu - Dibuat Netral */}
-            <td className="px-6 py-4 align-middle border-r border-slate-50">
-              <div className="flex flex-col items-center gap-1">
-                <span className="font-mono text-slate-900 font-bold text-sm tracking-tight">{t.ticket_code}</span>
-                <span className="text-[10px] font-medium text-slate-400 uppercase tracking-tighter">
-                  {formatDate(t.created_at)}
-                </span>
-              </div>
-            </td>
+       <div className="bg-white rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-200 overflow-hidden flex flex-col">
+          <div className="overflow-x-auto">
+            <table className="w-full text-center">
+              <thead>
+                <tr className="bg-gradient-to-r from-[#063B27] to-[#006A4E] text-white">
+                  <th className="px-6 py-5 text-[11px] font-bold uppercase tracking-[0.2em] border-r border-white/10">Tiket</th>
+                  <th className="px-6 py-5 text-[11px] font-bold uppercase tracking-[0.2em] border-r border-white/10">Pelapor</th>
+                  <th className="px-6 py-5 text-[11px] font-bold uppercase tracking-[0.2em] border-r border-white/10">Bidang</th>
+                  <th className="px-6 py-5 text-[11px] font-bold uppercase tracking-[0.2em] border-r border-white/10">Detail Masalah</th>
+                  <th className="px-6 py-5 text-[11px] font-bold uppercase tracking-[0.2em] border-r border-white/10">Status</th>
+                  <th className="px-6 py-5 text-[11px] font-bold uppercase tracking-[0.2em]">Tindakan</th>
+                </tr>
+              </thead>
+              
+              <tbody className="divide-y divide-slate-100">
+                {currentTickets.map((t) => (
+                  <tr key={t.id} className="group hover:bg-slate-50 transition-all">
+                    
+                    <td className="px-6 py-4 align-middle border-r border-slate-50">
+                      <div className="flex flex-col items-center gap-1">
+                        <span className="font-mono text-slate-900 font-bold text-sm tracking-tight">{t.ticket_code}</span>
+                        <span className="text-[10px] font-medium text-slate-400 uppercase tracking-tighter">
+                          {formatDate(t.created_at)}
+                        </span>
+                      </div>
+                    </td>
 
-            {/* Pelapor - Fokus pada Teks Hitam Bersih */}
-            <td className="px-6 py-4 align-middle border-r border-slate-50">
-              <div className="flex flex-col items-center">
-                  <span className="font-bold text-slate-800 text-sm">{t.sender_name || 'Anonymous'}</span>
-                  <span className="text-[11px] text-slate-400 font-medium">{t.phone_number}</span>
-              </div>
-            </td>
+                    <td className="px-6 py-4 align-middle border-r border-slate-50">
+                      <div className="flex flex-col items-center">
+                          <span className="font-bold text-slate-800 text-sm">{t.sender_name || 'Anonymous'}</span>
+                          <span className="text-[11px] text-slate-400 font-medium">{t.phone_number}</span>
+                      </div>
+                    </td>
 
-            {/* Bidang - Badge Abu-abu Soft dengan Aksen Hijau Tipis */}
-            <td className="px-6 py-4 align-middle border-r border-slate-50">
-                <div className="flex justify-center">
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-slate-100 text-slate-600 text-[10px] font-bold uppercase rounded-full border border-slate-200">
-                      <div className="w-1 h-1 rounded-full bg-emerald-500"></div> {t.division || '-'}
-                  </span>
-                </div>
-            </td>
+                    <td className="px-6 py-4 align-middle border-r border-slate-50">
+                        <div className="flex justify-center">
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-slate-100 text-slate-600 text-[10px] font-bold uppercase rounded-full border border-slate-200">
+                              <div className="w-1 h-1 rounded-full bg-emerald-500"></div> {t.division || '-'}
+                          </span>
+                        </div>
+                    </td>
 
-            {/* Detail Keluhan - Background Putih Bersih */}
-            <td className="px-6 py-4 align-middle text-left border-r border-slate-50">
-              <div className="p-2 mx-auto max-w-[250px]">
-                  <p className="text-slate-600 text-xs leading-relaxed italic line-clamp-2 text-center">
-                      "{t.issue_details}"
-                  </p>
-              </div>
-            </td>
+                    <td className="px-6 py-4 align-middle text-left border-r border-slate-50">
+                      <div className="p-2 mx-auto max-w-[250px]">
+                          <p className="text-slate-600 text-xs leading-relaxed italic line-clamp-2 text-center">
+                              "{t.issue_details}"
+                          </p>
+                      </div>
+                    </td>
 
-            {/* Status - Tetap menggunakan Badge Berwarna agar Mudah Dibedakan */}
-            <td className="px-6 py-4 align-middle border-r border-slate-50">
-              <div className="flex justify-center">
-                 <StatusBadge status={t.status} />
-              </div>
-            </td>
+                    <td className="px-6 py-4 align-middle border-r border-slate-50">
+                      <div className="flex justify-center">
+                         <StatusBadge status={t.status} />
+                      </div>
+                    </td>
 
-            {/* Aksi - Tombol Utama */}
-            <td className="px-6 py-4 align-middle">
-              <div className="flex justify-center max-w-[140px] mx-auto">
-                {t.status !== 'SELESAI' ? (
-                  <button 
-                    onClick={() => updateStatus(t.id, 'SELESAI')} 
-                    className="flex items-center justify-center gap-2 bg-[#006A4E] hover:bg-[#00553F] text-white px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all shadow-sm active:scale-95 w-full"
-                  >
-                    <CheckCircle2 size={12} /> Selesaikan
-                  </button>
-                ) : (
-                   <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest italic">✓ Selesai</span>
-                )}
-              </div>
-            </td>
+                    <td className="px-6 py-4 align-middle">
+                      <div className="flex justify-center max-w-[140px] mx-auto">
+                        {t.status !== 'SELESAI' ? (
+                          <button 
+                            onClick={() => updateStatus(t.id, 'SELESAI')} 
+                            className="flex items-center justify-center gap-2 bg-[#006A4E] hover:bg-[#00553F] text-white px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all shadow-sm active:scale-95 w-full"
+                          >
+                            <CheckCircle2 size={12} /> Selesaikan
+                          </button>
+                        ) : (
+                           <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest italic">✓ Selesai</span>
+                        )}
+                      </div>
+                    </td>
 
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  </div>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
           {/* === PAGINATION CONTROLS === */}
           {tickets.length > 0 && (
